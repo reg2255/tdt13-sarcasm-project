@@ -6,6 +6,8 @@ from evaluate import evaluate
 import torch
 import os
 import pandas as pd
+import argparse
+import shutil
 
 #to convert pandas table to Hugging Face-dataset
 def to_dataset(df, tokenizer):
@@ -34,8 +36,22 @@ class WeightedTrainer(Trainer):
         )
         return (loss, outputs) if return_outputs else loss
 
-MODEL_NAME = "roberta-base"
-SEED = 42
+# MODEL_NAME = "roberta-base"
+MODEL_CONFIGS = {
+    "roberta": {"name": "roberta-base", "tokenizer_kwargs": {}},
+    "bertweet": {"name": "vinai/bertweet-base", "tokenizer_kwargs": {"normalization": True}},
+    "modernbert": {"name": "answerdotai/ModernBERT-base", "tokenizer_kwargs": {}}
+}
+# SEED = 42
+parser = argparse.ArgumentParser()
+parser.add_argument("--model", choices=MODEL_CONFIGS.keys(), required=True)
+parser.add_argument("--seed", type=int, default=42)
+cli_args = parser.parse_args()
+
+MODEL_KEY = cli_args.model
+MODEL_NAME = MODEL_CONFIGS[MODEL_KEY]["name"]
+SEED = cli_args.seed
+print(f"Training {MODEL_NAME} with seed {SEED}")
  
 training_data = load_train("./data/train.En.csv")
 train_data, val_data = split_train_val(training_data)
@@ -52,7 +68,7 @@ print(f"Class weights: {class_weights}")
 # y_val = val_data["sarcastic"]
 y_test = test_data_A["sarcastic"]
 
-tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
+tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, **MODEL_CONFIGS[MODEL_KEY]["tokenizer_kwargs"])
 
 train_dataset = to_dataset(train_data, tokenizer)
 val_dataset = to_dataset(val_data, tokenizer)
@@ -65,7 +81,7 @@ set_seed(SEED)
 model = AutoModelForSequenceClassification.from_pretrained(MODEL_NAME, num_labels=2)
 
 args = TrainingArguments(
-    output_dir="runs/roberta",
+    output_dir=f"runs/{MODEL_KEY}_seed{SEED}",
     learning_rate=2e-5,
     num_train_epochs=4,
     per_device_train_batch_size=16,
@@ -108,10 +124,13 @@ test_predictions = pd.DataFrame({
     "sarcastic": y_test,
     "pred": test_pred
 })
-test_predictions.to_csv(f"results/roberta_seed{SEED}_test_predictions.csv", index=False)
+test_predictions.to_csv(f"results/{MODEL_KEY}_seed{SEED}_test_predictions.csv", index=False)
 
 metrics = pd.DataFrame([
-    {"model": "roberta", "seed": SEED, "split": "validation", **val_results},
-    {"model": "roberta", "seed": SEED, "split": "test", **test_results}
+    {"model": MODEL_KEY, "seed": SEED, "split": "validation", **val_results},
+    {"model": MODEL_KEY, "seed": SEED, "split": "test", **test_results}
 ])
-metrics.to_csv(f"results/roberta_seed{SEED}_metrics.csv", index=False)
+metrics.to_csv(f"results/{MODEL_KEY}_seed{SEED}_metrics.csv", index=False)
+
+# fjern data, tar mye plass
+shutil.rmtree(f"runs/{MODEL_KEY}_seed{SEED}", ignore_errors=True)
