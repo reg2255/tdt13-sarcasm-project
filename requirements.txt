@@ -8,3 +8,5 @@ emoji
 jupyter
 ipykernel
 matplotlib
+peft
+bitsandbytes; sys_platform == "linux"
